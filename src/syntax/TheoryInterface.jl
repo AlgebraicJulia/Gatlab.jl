@@ -1,13 +1,3 @@
-module TheoryInterface
-export @theory, @signature, invoke_term
-
-using ..Scopes, ..GATs, ..ExprInterop, GATlab.Util
-
-using MLStyle, StructEquality, Markdown
-
-@struct_hash_equal struct WithModel{M}
-  model::M
-end
 
 """
 Each theory corresponds to a module, which has the following items.
@@ -29,7 +19,27 @@ For all aliases, `const` declarations that make them equal to their primaries.
 A macro called `@theory` which expands to the `GAT` data structure for the module.
 
 A constant called `Meta.theory` which is the `GAT` data structure.
+
+A struct called `Meta.Wrapper` which is a smart constructor for Julia types 
+which implement the theory.
 """
+module TheoryInterface
+export @theory, @signature, invoke_term, wrapper, ModelWrapper
+
+using ..Scopes, ..GATs, ..ExprInterop, GATlab.Util
+
+using MLStyle, StructEquality, Markdown
+import AlgebraicInterfaces: getvalue
+
+@struct_hash_equal struct WithModel{M}
+  model::M
+end
+
+getvalue(m::WithModel) = m.model
+
+function implements end # implemented in ModelInterface
+
+function impl_type end # implemented in ModelInterface
 
 # TODO is every contribution to a theory a new segment, or can a new theory introduce multiple segments? 
 """
@@ -153,7 +163,7 @@ function theory_impl(head, body, __module__)
   mdp(::Nothing) = []
   mdp(x::Markdown.MD) = x
   mdp(x::Base.Docs.DocStr) = Markdown.parse(x.text...)
-
+  wrapper_expr = wrapper(name, theory, fqmn(__module__))
   push!(modulelines, Expr(:toplevel, :(module Meta
     struct T end
    
@@ -161,6 +171,8 @@ function theory_impl(head, body, __module__)
 
     macro theory() $theory end
     macro theory_module() parentmodule(@__MODULE__) end
+
+    $wrapper_expr
   end)))
 
   # XXX
@@ -175,8 +187,8 @@ function theory_impl(head, body, __module__)
       :(Core.@__doc__ $(doctarget)),
       :(
         module $name
-        $(modulelines...)
         $(structlines...)
+        $(modulelines...)
         end
       ),
       :(@doc ($(Markdown.MD)($mdp(@doc $doctarget), $docstr)) $name)
@@ -250,4 +262,51 @@ function mk_struct(s::AlgStruct, mod)
   end
 end
 
+# Wrapper type 
+##############
+
+
+function wrapper(name::Symbol, t::GAT, mod)
+  use = Expr(:using, Expr(:., :., :., name))
+  quote
+    $use
+    macro wrapper(n)
+      esc(:($($(name)).Meta.@wrapper $n $Any))
+    end
+    macro abs_wrapper(n)
+      n.head == :<: || error("Expected: StructName <: AbsType, got $n")
+      x, y = n.args
+      esc(:($($(name)).Meta.@wrapper $(x) $(y)))
+    end
+    macro wrapper(n, abs)
+      esc(quote 
+        struct $n <: $abs
+          val::Any
+          function $n(x::Any)
+            $($(GlobalRef(TheoryInterface, :implements)))(x, $($name)) || error(
+              "Invalid $($($(name))) model: $x")
+            new(x)
+          end
+        end
+        $(Expr(:macrocall, $(GlobalRef(StructEquality, Symbol("@struct_hash_equal"))), $(mod), $(:n)))
+
+        GATlab.getvalue(x::$n) = x.val # GlobalRef doesn't work: "invalid function name"
+        GATlab.impl_type(x::$n, o::Symbol) = GATlab.impl_type(x.val, $($name), o)
+
+        $(map($(identvalues(t))) do (x,j)
+        if j isa $(AlgDeclaration) 
+          op = nameof(x)
+          :($($(name)).$op(x::$(($(:n))), args...; kw...) = 
+            $($(name)).$op[x.val](args...; kw...))
+        else
+          :()
+        end
+      end...)
+      $n
+      end)
+    end
+  end
 end
+
+
+end # module
