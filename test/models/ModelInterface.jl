@@ -253,7 +253,21 @@ end
 @test_throws MethodError id2(FinSetC())
 
 abstract type MyAbsType end
-ThCategory.Meta.@abs_wrapper Cat2 <: MyAbsType 
+ThCategory.Meta.@wrapper Cat2 <: MyAbsType 
 @test Cat2 <: MyAbsType
+
+# Typed wrappers
+#----------------
+"""Typed Cat"""
+ThCategory.Meta.@typed_wrapper TCat
+
+c = TCat(FinSetC())
+@test c isa TCat{Int, Vector{Int}}
+@test id(c, 2) == [1,2]
+
+c2 = TCat(FinMatC{Int}());
+@test c2 isa TCat{Int, Matrix{Int}}
+
+@test id(c2, 2) == [1 0; 0 1]
 
 end # module
