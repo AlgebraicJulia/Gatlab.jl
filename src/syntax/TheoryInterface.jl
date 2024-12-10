@@ -329,6 +329,9 @@ function wrapper(name::Symbol, t::GAT, mod)
       Xs = map(Ts) do s 
         :($(GlobalRef($(TheoryInterface), :impl_type))(x, $($(name)), $($(Meta.quot)(s))))
       end
+      XTs = map(zip(Ts,Xs)) do (T,X)
+        :($X <: $T || error("Mismatch $($($(Meta.quot)(T))): $($X) ⊄ $($T)"))
+      end
       esc(quote 
         # Catch any potential docs above the macro call
         const $(doctarget) = nothing
@@ -337,6 +340,14 @@ function wrapper(name::Symbol, t::GAT, mod)
         # Declare the wrapper struct
         struct $n{$(Ts...)} <: $abs
           val::Any
+          function $n{$(Ts...)}(x::Any) where {$(Ts...)}
+            $($(GlobalRef(TheoryInterface, :implements)))(x, $($name)) || error(
+              "Invalid $($($(name))) model: $x")
+            $(XTs...)
+            # CHECK THAT THE GIVEN PARAMETERS MATCH Xs
+            new{$(Ts...)}(x)
+          end
+
           function $n(x::Any)
             $($(GlobalRef(TheoryInterface, :implements)))(x, $($name)) || error(
               "Invalid $($($(name))) model: $x")

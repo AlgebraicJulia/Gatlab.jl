@@ -262,6 +262,8 @@ ThCategory.Meta.@wrapper Cat2 <: MyAbsType
 ThCategory.Meta.@typed_wrapper TCat
 
 c = TCat(FinSetC())
+@test c == TCat{Int,Vector{Int}}(FinSetC())
+@test_throws ErrorException TCat{Bool,Symbol}(FinSetC()) # Ob: Int ⊄ Bool
 @test c isa TCat{Int, Vector{Int}}
 @test id(c, 2) == [1,2]
 
