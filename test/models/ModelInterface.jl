@@ -231,6 +231,7 @@ d = Dispatch(ThCategory.Meta.theory, [Int, Vector{Int}])
  
 # Test wrapper structs
 ######################
+"""Cat"""
 ThCategory.Meta.@wrapper Cat
 
 c = Cat(FinSetC());

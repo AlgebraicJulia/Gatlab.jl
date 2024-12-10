@@ -41,6 +41,14 @@ function implements end # implemented in ModelInterface
 
 function impl_type end # implemented in ModelInterface
 
+""" Parse markdown coming out of @doc programatically. """
+mdp(::Nothing) = ""
+mdp(x::Markdown.MD) = x
+function mdp(x::Base.Docs.DocStr)
+  Markdown.parse(only(x.text))
+end
+
+
 # TODO is every contribution to a theory a new segment, or can a new theory introduce multiple segments? 
 """
 When we declare a new theory, we add the scope tag of its new segment to this
@@ -160,9 +168,6 @@ function theory_impl(head, body, __module__)
   end
   
   doctarget = gensym()
-  mdp(::Nothing) = []
-  mdp(x::Markdown.MD) = x
-  mdp(x::Base.Docs.DocStr) = Markdown.parse(x.text...)
   wrapper_expr = wrapper(name, theory, fqmn(__module__))
   push!(modulelines, Expr(:toplevel, :(module Meta
     struct T end
@@ -271,7 +276,15 @@ function wrapper(name::Symbol, t::GAT, mod)
   quote
     $use
     macro wrapper(n)
-      esc(:($($(name)).Meta.@wrapper $n $Any))
+      x, y = if n isa Symbol
+        n, Any
+      elseif n.head == :<: 
+        n.args
+      else 
+        error("Unexpected input for wrapper $n")
+      end
+
+      esc(:($($(name)).Meta.@wrapper $x $y))
     end
     macro abs_wrapper(n)
       n.head == :<: || error("Expected: StructName <: AbsType, got $n")
@@ -279,7 +292,13 @@ function wrapper(name::Symbol, t::GAT, mod)
       esc(:($($(name)).Meta.@wrapper $(x) $(y)))
     end
     macro wrapper(n, abs)
+      doctarget = gensym()
       esc(quote 
+        # Catch any potential docs above the macro call
+        const $(doctarget) = nothing
+        Core.@__doc__ $(doctarget)
+
+        # Declare the wrapper struct
         struct $n <: $abs
           val::Any
           function $n(x::Any)
@@ -288,21 +307,25 @@ function wrapper(name::Symbol, t::GAT, mod)
             new(x)
           end
         end
+        # Apply the caught documentation to the new struct
+        @doc $($(mdp))(@doc $doctarget) $n
+
+        # Define == and hash
         $(Expr(:macrocall, $(GlobalRef(StructEquality, Symbol("@struct_hash_equal"))), $(mod), $(:n)))
 
-        GATlab.getvalue(x::$n) = x.val # GlobalRef doesn't work: "invalid function name"
+        # GlobalRef doesn't work: "invalid function name".
+        GATlab.getvalue(x::$n) = x.val 
         GATlab.impl_type(x::$n, o::Symbol) = GATlab.impl_type(x.val, $($name), o)
 
-        $(map($(identvalues(t))) do (x,j)
-        if j isa $(AlgDeclaration) 
-          op = nameof(x)
-          :($($(name)).$op(x::$(($(:n))), args...; kw...) = 
-            $($(name)).$op[x.val](args...; kw...))
-        else
-          :()
-        end
+        # Dispatch on model value for all declarations in theory
+        $(map(filter(x->x[2] isa $AlgDeclaration, $(identvalues(t)))) do (x,j)
+          if j isa $(AlgDeclaration) 
+            op = nameof(x)
+            :($($(name)).$op(x::$(($(:n))), args...; kw...) = 
+              $($(name)).$op[x.val](args...; kw...))
+          end
       end...)
-      $n
+      nothing
       end)
     end
   end
