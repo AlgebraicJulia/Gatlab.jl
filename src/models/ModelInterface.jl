@@ -52,9 +52,9 @@ using ...Syntax
 using ...Util.MetaUtils
 using ...Util.MetaUtils: JuliaFunctionSigNoWhere
 
-import ...Syntax.TheoryMaps: migrator 
 using ...Syntax.TheoryMaps: dom, codom
 using ...Syntax.TheoryInterface: GAT_MODULE_LOOKUP, Dispatch
+import ...Syntax.TheoryInterface: implements, impl_type 
 
 using MLStyle
 using DataStructures: DefaultDict, OrderedDict
